@@ -31,7 +31,10 @@ const webWorkerFunctionCreator = <
     postMessage: (args: Parameters<T>) => {
       worker.postMessage({ funcString: func.toString(), args });
     },
-    terminate: () => worker.terminate(),
+    terminate: () => {
+      URL.revokeObjectURL(workerScript);
+      worker.terminate();
+    },
     onMessage: (callback: (result: R) => void) => {
       worker.onmessage = (e: MessageEvent) => callback(e.data);
     },
