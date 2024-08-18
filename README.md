@@ -109,7 +109,7 @@ This setup ensures that the function is executed in a separate thread, keeping t
 
 
 
-
+##
 ### Description of `useWebWorker` Hook
 
 The `useWebWorker` hook is a custom React hook designed to leverage Web Workers for executing computationally intensive tasks in a separate thread. This helps keep the main thread responsive and improves the performance of your application. Here's a detailed breakdown of its components and functionality:
