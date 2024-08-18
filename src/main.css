@@ -81,7 +81,7 @@ button:focus-visible {
   border: 1px solid gray;
   padding: 10px;
   border-radius: 8px;
-  min-height: 160px;
+  /* min-height: 160px; */
   min-width: min(calc(100% - 40px), 400px);
 }
 

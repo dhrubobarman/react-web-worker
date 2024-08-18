@@ -26,14 +26,22 @@ function ExampleWithHook() {
       return (
         <>
           loading...{" "}
-          <button onClick={() => setShouldExecute(0)}>Stop execution</button>
+          <button
+            style={{ marginInline: "auto", display: "block" }}
+            onClick={() => setShouldExecute(0)}
+          >
+            Stop execution
+          </button>
         </>
       );
 
     return (
       <>
         {result}{" "}
-        <button onClick={() => setShouldExecute((prev) => prev + 1)}>
+        <button
+          style={{ marginInline: "auto", display: "block" }}
+          onClick={() => setShouldExecute((prev) => prev + 1)}
+        >
           {shouldExecute > 0 ? "Restart" : "Start"} execution
         </button>
       </>
