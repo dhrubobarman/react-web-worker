@@ -4,6 +4,53 @@
 
 The `useWebWorker` hook is a custom React hook designed to leverage Web Workers for executing computationally intensive tasks in a separate thread. This helps keep the main thread responsive and improves the performance of your application. Here's a detailed breakdown of its components and functionality:
 
+```typescript
+const useWebWorker = <T>(
+  inputData: T,
+  workerFunction: () => void,
+  shouldExecute: boolean | number = true
+) => {
+  const [result, setResult] = useState<T | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const memoizedWorkerFunction = useCallback(workerFunction, [workerFunction]);
+
+  useEffect(() => {
+    setIsLoading(Boolean(shouldExecute));
+    if (!shouldExecute) return;
+    setError(null);
+    try {
+      const code = memoizedWorkerFunction.toString();
+      const blob = new Blob([`(${code})()`], {
+        type: "application/javascript",
+      });
+      const workerScript = URL.createObjectURL(blob);
+      const worker = new Worker(workerScript);
+      worker.postMessage(inputData);
+      worker.onmessage = (e) => {
+        setResult(e.data);
+        setIsLoading(false);
+      };
+      worker.onerror = (e) => {
+        setError(e.message);
+        setIsLoading(false);
+      };
+
+      return () => {
+        worker.terminate();
+        URL.revokeObjectURL(workerScript);
+      };
+    } catch (error) {
+      const e = error as ErrorEvent;
+      setError(e.message);
+    }
+  }, [inputData, memoizedWorkerFunction, shouldExecute]);
+
+  return { result, isLoading, error };
+};
+```
+
 1. **Generics**:
    - `<T>`: The hook uses a generic type `T` to ensure type safety for the input data and the result.
 
@@ -80,6 +127,41 @@ This setup ensures that the function is executed in a separate thread, keeping t
 ### Description of `webWorkerFunctionCreator` Function
 
 The `webWorkerFunctionCreator` function is a utility designed to create and manage Web Workers in a TypeScript environment. It allows you to offload computationally intensive tasks to a separate thread, thereby keeping the main thread responsive. Here's a detailed breakdown of its components and functionality:
+
+```typescript
+const webWorkerFunctionCreator = <
+  R,
+  T extends (...args: Parameters<T>) => R
+>(
+  func: T
+) => {
+  // Create a worker function string
+  const workerFunction = () => {
+    onmessage = (e: MessageEvent) => {
+      const { funcString, args } = e.data;
+      const func = new Function(`return (${funcString})`)();
+      const result = func(...args);
+      postMessage(result);
+    };
+  };
+
+  // Convert the worker function to a string
+  const code = workerFunction.toString();
+  const blob = new Blob([`(${code})()`], { type: "application/javascript" });
+  const workerScript = URL.createObjectURL(blob);
+  const worker = new Worker(workerScript);
+
+  return {
+    postMessage: (args: Parameters<T>) => {
+      worker.postMessage({ funcString: func.toString(), args });
+    },
+    terminate: () => worker.terminate(),
+    onMessage: (callback: (result: R) => void) => {
+      worker.onmessage = (e: MessageEvent) => callback(e.data);
+    },
+  };
+};
+```
 
 1. **Generics**:
    - `<R, T extends (...args: Parameters<T>) => R>`: The function uses generics to ensure type safety. `R` represents the return type of the function, and `T` represents the function type that will be executed in the Web Worker.
