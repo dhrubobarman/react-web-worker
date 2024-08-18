@@ -26,9 +26,6 @@ function ExampleWithHook() {
       return (
         <>
           loading...{" "}
-          <button onClick={() => setCount((prev) => prev + 1)}>
-            Increse {count}
-          </button>
           <button onClick={() => setShouldExecute(0)}>Stop execution</button>
         </>
       );
@@ -45,7 +42,16 @@ function ExampleWithHook() {
 
   return (
     <div>
-      <p>This example is with web worker hook</p>
+      <div
+        style={{ marginBottom: 8, display: "flex", flexDirection: "column" }}
+      >
+        <span style={{ marginBottom: 8 }}>
+          This example is with web worker hook
+        </span>
+        <button onClick={() => setCount((prev) => prev + 1)}>
+          Increse {count}
+        </button>
+      </div>
       {executionResult()}
     </div>
   );

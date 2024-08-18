@@ -76,6 +76,11 @@ button:focus-visible {
   max-width: 1024px;
   margin-inline: auto;
 }
+.grid > * {
+  border: 1px solid gray;
+  padding: 10px;
+  border-radius: 8px;
+}
 
 .grid > *:first-child {
   margin-inline: auto;

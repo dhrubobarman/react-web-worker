@@ -57,7 +57,7 @@ const webWorkerFunctionCreator = <
 6. **Return Object**:
    - The function returns an object with the following methods:
      - **postMessage**: Sends data to the worker. It serializes the function and its arguments and posts them to the worker.
-     - **terminate**: Terminates the worker, stopping its execution.
+     - **terminate**: Terminates the worker, stopping its execution and the URL is revoked.
      - **onMessage**: Sets a callback to handle messages from the worker. This callback receives the result of the function executed in the worker.
 
 ### Usage Example

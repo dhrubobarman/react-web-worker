@@ -18,8 +18,8 @@ const ExampleWithNormalFunction = () => {
     <div>
       <label>
         <p style={{ display: "block" }}>
-          Example With normal function: it will not freeze the browser once
-          passed a large number.
+          Example With normal function: it will freeze the browser once passed a
+          large number.
         </p>
         <input
           type="number"
