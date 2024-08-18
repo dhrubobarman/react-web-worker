@@ -3,7 +3,7 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  color-scheme: dark light;
   color: rgba(255, 255, 255, 0.87);
   background-color: #242424;
 
@@ -64,7 +64,8 @@ button:focus-visible {
     color: #747bff;
   }
   button {
-    background-color: #f9f9f9;
+    background-color: #222223;
+    color: white;
   }
 }
 
@@ -80,11 +81,12 @@ button:focus-visible {
   border: 1px solid gray;
   padding: 10px;
   border-radius: 8px;
+  min-height: 160px;
+  min-width: min(calc(100% - 40px), 400px);
 }
 
 .grid > *:first-child {
   margin-inline: auto;
-  margin-bottom: 30px;
 }
 .grid p {
   min-height: 48px;
