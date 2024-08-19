@@ -1,12 +1,13 @@
 # WebWorker + React + TypeScript
----
 
-Here's the documentation for the `generateWebWorker` function:
+## Documentation for the `generateWebWorker` function:
 
 ### `generateWebWorker`
 
 Creates a web worker to run a given function in a separate thread, returning a function to execute the worker and an object to manage the worker's status and termination.
 ```typescript
+type WorkerStatus = "idle" | "running" | "error";
+
 function generateWebWorker<
   T extends (...args: Parameters<T>) => ReturnType<T>
 >(
@@ -175,6 +176,8 @@ Here's the documentation for the `useWebWorker` hook:
 A custom React hook that creates a web worker to run a given function in a separate thread, returning a function to execute the worker and an object to manage the worker's status and termination.
 
 ```typescript
+type WorkerStatus = "idle" | "running" | "error";
+
 function useWebWorker<T extends (...args: Parameters<T>) => ReturnType<T>>(
   workerFunction: T
 ): [
