@@ -183,6 +183,7 @@ export function generateWebWorker<
       worker.terminate();
       worker = null;
       status = "idle";
+      URL.revokeObjectURL(workerUrl);
     }
   };
 
