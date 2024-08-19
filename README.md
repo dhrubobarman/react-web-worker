@@ -1,104 +1,156 @@
 # WebWorker + React + TypeScript
+---
 
-### Description of `webWorkerFunctionCreator` Function
+Here's the documentation for the `generateWebWorker` function:
 
-The `webWorkerFunctionCreator` function is a utility designed to create and manage Web Workers in a TypeScript environment. It allows you to offload computationally intensive tasks to a separate thread, thereby keeping the main thread responsive. Here's a detailed breakdown of its components and functionality:
+### `generateWebWorker`
 
+Creates a web worker to run a given function in a separate thread, returning a function to execute the worker and an object to manage the worker's status and termination.
 ```typescript
-const webWorkerFunctionCreator = <
-  R,
-  T extends (...args: Parameters<T>) => R
+function generateWebWorker<
+  T extends (...args: Parameters<T>) => ReturnType<T>
 >(
-  func: T
-) => {
-  // Create a worker function string
-  const workerFunction = () => {
-    onmessage = (e: MessageEvent) => {
-      const { funcString, args } = e.data;
-      const func = new Function(`return (${funcString})`)();
-      const result = func(...args);
-      postMessage(result);
+  workerFunction: T
+): [
+  (...args: Parameters<T>) => Promise<ReturnType<T>>,
+  { status: WorkerStatus; kill: () => void }
+] {
+  let status: WorkerStatus = "idle";
+  let worker: Worker | null = null;
+
+  const workerFunc = () => {
+    self.onmessage = async (event) => {
+      const { input, functionString } = event.data;
+      const func = new Function("return " + functionString)();
+      try {
+        const result = await func(...input);
+        self.postMessage({ result });
+      } catch (error) {
+        const e = error as ErrorEvent;
+        self.postMessage({ error: e.message });
+      }
     };
   };
-
-  // Convert the worker function to a string
-  const code = workerFunction.toString();
+  const code = workerFunc.toString();
   const blob = new Blob([`(${code})()`], { type: "application/javascript" });
-  const workerScript = URL.createObjectURL(blob);
-  const worker = new Worker(workerScript);
+  const workerUrl = URL.createObjectURL(blob);
+  const newWorker = new Worker(workerUrl);
+  worker = newWorker;
 
-  return {
-    postMessage: (args: Parameters<T>) => {
-      worker.postMessage({ funcString: func.toString(), args });
-    },
-    terminate: () => {
-      URL.revokeObjectURL(workerScript);
-      worker.terminate();
-    },
-    onMessage: (callback: (result: R) => void) => {
-      worker.onmessage = (e: MessageEvent) => callback(e.data);
-    },
+  const runWorker = (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    if (!worker) {
+      return Promise.reject(new Error("Worker not initialized"));
+    }
+
+    status = "running";
+    return new Promise((resolve, reject) => {
+      worker!.onmessage = (event) => {
+        const { result, error } = event.data;
+        if (error) {
+          status = "error";
+          reject(new Error(error));
+        } else {
+          status = "idle";
+          resolve(result);
+        }
+      };
+
+      worker!.onerror = (error) => {
+        status = "error";
+        reject(error);
+      };
+
+      worker!.postMessage({
+        input: [...args],
+        functionString: workerFunction.toString(),
+      });
+    });
   };
-};
+
+  const kill = () => {
+    if (worker) {
+      worker.terminate();
+      worker = null;
+      status = "idle";
+    }
+  };
+
+  return [runWorker, { status, kill }];
+}
 ```
 
-1. **Generics**:
-   - `<R, T extends (...args: Parameters<T>) => R>`: The function uses generics to ensure type safety. `R` represents the return type of the function, and `T` represents the function type that will be executed in the Web Worker.
+#### Type Parameters
+- `T`: The type of the worker function, which extends a function type with parameters and a return type.
 
-2. **Function Parameter**:
-   - `func: T`: The function to be executed in the Web Worker is passed as an argument.
+#### Parameters
+- `workerFunction: T`
+  - A function to be executed in the web worker. It takes parameters of type `Parameters<T>` and returns a result of type `ReturnType<T>`.
 
-3. **Worker Function**:
-   - The `workerFunction` is defined to handle messages from the main thread. It reconstructs the function from a string, executes it with the provided arguments, and posts the result back to the main thread.
+#### Returns
+- A tuple containing:
+  1. `(...args: Parameters<T>) => Promise<ReturnType<T>>`: A function to execute the worker with parameters of type `Parameters<T>`, returning a `Promise` that resolves to the result of type `ReturnType<T>`.
+  2. `{ status: WorkerStatus; kill: () => void }`: An object with:
+     - `status: WorkerStatus`: The current status of the worker (`"idle"`, `"running"`, or `"error"`).
+     - `kill: () => void`: A function to terminate the worker.
 
-4. **Blob and Worker Script**:
-   - The `workerFunction` is converted to a string and wrapped in a `Blob` object. This blob is then used to create a URL, which serves as the script for the Web Worker.
-
-5. **Worker Creation**:
-   - A new `Worker` instance is created using the generated script URL.
-
-6. **Return Object**:
-   - The function returns an object with the following methods:
-     - **postMessage**: Sends data to the worker. It serializes the function and its arguments and posts them to the worker.
-     - **terminate**: Terminates the worker, stopping its execution and the URL is revoked.
-     - **onMessage**: Sets a callback to handle messages from the worker. This callback receives the result of the function executed in the worker.
-
-### Usage Example
-
-Here's how you can use the `webWorkerFunctionCreator` in a React component:
-
+#### Example Usage
 ```typescript
 // src/App.tsx
-import React, { useState, useEffect } from 'react';
-import { webWorkerFunctionCreator } from './webWorkerFunctionCreator';
+import { useState } from "react";
+import { generateWebWorker } from "./hooks/useWebWorker";
 
-const App: React.FC = () => {
+const workerFunc = (num = 10000) => {
+  if (!num) return 0;
+  let result = 0;
+  for (let i = 0; i < Math.abs(+num); i++) {
+    result += i;
+  }
+  return result;
+};
+const [runWorker] = generateWebWorker(workerFunc);
+
+const App = () => {
   const [input, setInput] = useState<number>(0);
   const [result, setResult] = useState<number | null>(null);
 
-  useEffect(() => {
-    const worker = webWorkerFunctionCreator<number, (num: number) => number>(
-      (num) => num * 2
-    );
-
-    worker.onMessage((res) => {
-      setResult(res);
-    });
-
-    worker.postMessage([input]);
-
-    return () => {
-      worker.terminate();
-    };
-  }, [input]);
+  const handleChange = async (value: number) => {
+    setInput(value);
+    try {
+      if (runWorker) {
+        const result = await runWorker(value);
+        setResult(result);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   return (
     <div>
-      <input
-        type="number"
-        value={input}
-        onChange={(e) => setInput(Number(e.target.value))}
-      />
+      <label>
+        <p style={{ display: "block" }}>
+          Example With web worker function: it will not freeze the browser
+        </p>
+        <input
+          type="number"
+          value={input}
+          style={{
+            display: "block",
+            padding: 10,
+            marginBottom: 5,
+            borderRadius: "5px",
+            boxShadow: "none",
+            minWidth: 191,
+          }}
+          onChange={(e) => handleChange(e.target.valueAsNumber)}
+        />
+      </label>
+      <button
+        onClick={() => handleChange(200000000 + input)}
+        style={{ display: "block" }}
+      >
+        Increse Value by 200M
+      </button>
       <div>Result: {result}</div>
     </div>
   );
@@ -107,28 +159,38 @@ const App: React.FC = () => {
 export default App;
 ```
 
-This setup ensures that the function is executed in a separate thread, keeping the main thread free for UI updates and other tasks.
+#### Detailed Description
+1. **Worker Initialization**: The `workerFunc` function defines the worker's behavior, listening for messages, executing the provided function, and posting the result or error back to the main thread. This function is converted to a string and used to create a `Blob`, which is then used to create a `Worker`.
+2. **Running the Worker**: The `runWorker` function sets the worker status to `"running"` and returns a `Promise` that resolves with the result or rejects with an error. It posts a message to the worker with the function's parameters and string representation.
+3. **Terminating the Worker**: The `kill` function terminates the worker and resets its status to `"idle"`.
+
+This function is useful for offloading CPU-intensive tasks to a background thread, freeing up the main thread for other operations.
 
 ---
 
-### Documentation for `useWebWorker` Hook
+Here's the documentation for the `useWebWorker` hook:
 
-The `useWebWorker` hook is a custom React hook designed to execute a function in a Web Worker, providing a way to offload heavy computations to a separate thread. This helps keep the main thread responsive and improves the performance of your application. Here's a detailed breakdown of its components and functionality:
+### `useWebWorker`
+
+A custom React hook that creates a web worker to run a given function in a separate thread, returning a function to execute the worker and an object to manage the worker's status and termination.
 
 ```typescript
-function useWebWorker<T, R>(
-  workerFunction: (input?: T) => R
-): [(input?: T) => Promise<R>, { status: WorkerStatus; kill: () => void }] {
+function useWebWorker<T extends (...args: Parameters<T>) => ReturnType<T>>(
+  workerFunction: T
+): [
+  (...args: Parameters<T>) => Promise<ReturnType<T>>,
+  { status: WorkerStatus; kill: () => void }
+] {
   const [status, setStatus] = useState<WorkerStatus>("idle");
   const [worker, setWorker] = useState<Worker | null>(null);
 
   useEffect(() => {
-    const workerFunction = () => {
+    const workerFunc = () => {
       self.onmessage = async (event) => {
         const { input, functionString } = event.data;
         const func = new Function("return " + functionString)();
         try {
-          const result = await func(input);
+          const result = await func(...input);
           self.postMessage({ result });
         } catch (error) {
           const e = error as ErrorEvent;
@@ -136,7 +198,7 @@ function useWebWorker<T, R>(
         }
       };
     };
-    const code = workerFunction.toString();
+    const code = workerFunc.toString();
     const blob = new Blob([`(${code})()`], { type: "application/javascript" });
     const workerUrl = URL.createObjectURL(blob);
     const newWorker = new Worker(workerUrl);
@@ -149,14 +211,13 @@ function useWebWorker<T, R>(
   }, []);
 
   const runWorker = useCallback(
-    (input?: T): Promise<R> => {
+    (...args: Parameters<T>): Promise<ReturnType<T>> => {
       if (!worker) {
         return Promise.reject(new Error("Worker not initialized"));
       }
-
       setStatus("running");
       return new Promise((resolve, reject) => {
-        worker.onmessage = (event) => {
+        worker!.onmessage = (event) => {
           const { result, error } = event.data;
           if (error) {
             setStatus("error");
@@ -167,13 +228,13 @@ function useWebWorker<T, R>(
           }
         };
 
-        worker.onerror = (error) => {
+        worker!.onerror = (error) => {
           setStatus("error");
           reject(error);
         };
 
-        worker.postMessage({
-          input,
+        worker!.postMessage({
+          input: [...args],
           functionString: workerFunction.toString(),
         });
       });
@@ -194,50 +255,20 @@ function useWebWorker<T, R>(
 ```
 
 #### Type Parameters
-- `<T, R>`: 
-  - `T`: The type of the input data to the worker function.
-  - `R`: The type of the result returned by the worker function.
+- `T`: The type of the worker function, which extends a function type with parameters and a return type.
 
 #### Parameters
-- `workerFunction: (input?: T) => R`: 
-  - The function to be executed in the Web Worker. This function takes an optional input of type `T` and returns a result of type `R`.
+- `workerFunction: T`
+  - A function to be executed in the web worker. It takes parameters of type `Parameters<T>` and returns a result of type `ReturnType<T>`.
 
-#### Return Value
-- `[(input?: T) => Promise<R>, { status: WorkerStatus; kill: () => void }]`: 
-  - A tuple containing:
-    1. A function to run the worker with the provided input, returning a promise that resolves with the result.
-    2. An object with the current status of the worker and a function to terminate the worker.
+#### Returns
+- A tuple containing:
+  1. `(...args: Parameters<T>) => Promise<ReturnType<T>>`: A function to execute the worker with parameters of type `Parameters<T>`, returning a `Promise` that resolves to the result of type `ReturnType<T>`.
+  2. `{ status: WorkerStatus; kill: () => void }`: An object with:
+     - `status: WorkerStatus`: The current status of the worker (`"idle"`, `"running"`, or `"error"`).
+     - `kill: () => void`: A function to terminate the worker.
 
-#### State Variables
-- `status`: Tracks the current status of the worker (`"idle"`, `"running"`, `"error"`).
-- `worker`: Holds the reference to the Web Worker instance.
-
-#### Effect Hook
-- The `useEffect` hook initializes the Web Worker when the component mounts and cleans up when the component unmounts or dependencies change. It:
-  - Defines the worker function to handle messages and errors.
-  - Converts the worker function to a string and creates a `Blob` object.
-  - Generates a URL for the worker script and creates a new `Worker` instance.
-  - Sets the worker instance in the state.
-  - Terminates the worker and revokes the URL when the component unmounts.
-
-#### `runWorker` Function
-- The `runWorker` function is used to send data to the worker and handle the result. It:
-  - Checks if the worker is initialized.
-  - Sets the status to `"running"`.
-  - Returns a promise that resolves with the result or rejects with an error.
-  - Sends the input data and the worker function string to the worker.
-  - Handles messages and errors from the worker.
-
-#### `kill` Function
-- The `kill` function terminates the worker and resets the state. It:
-  - Terminates the worker if it exists.
-  - Sets the worker state to `null`.
-  - Resets the status to `"idle"`.
-
-### Usage Example
-
-Here's how you can use the `useWebWorker` hook in a React component:
-
+#### Example Usage
 ```typescript
 // src/App.tsx
 import React, { useState } from 'react';
@@ -276,5 +307,20 @@ const App: React.FC = () => {
 
 export default App;
 ```
+
+#### Detailed Description
+1. **Worker Initialization**: The `useEffect` hook initializes the web worker when the component mounts. It creates a worker script that listens for messages, executes the provided function, and posts the result or error back to the main thread. The worker is terminated and the URL is revoked when the component unmounts.
+2. **Running the Worker**: The `runWorker` function, created using `useCallback`, sets the worker status to `"running"` and returns a `Promise` that resolves with the result or rejects with an error. It posts a message to the worker with the function's parameters and string representation.
+3. **Terminating the Worker**: The `kill` function, also created using `useCallback`, terminates the worker and resets its status to `"idle"`.
+
+This hook is useful for offloading CPU-intensive tasks to a background thread, freeing up the main thread for other operations in a React application.
+
+Source: Conversation with Copilot, 19/8/2024
+(1) Angular. https://angular.io/guide/web-worker.
+(2) Web workers • Angular. https://angular.dev/ecosystem/web-workers/.
+(3) TypeScript: The starting point for learning TypeScript. https://www.typescriptlang.org/docs/.
+(4) Writing Web Workers in TypeScript - jameslmilner.com. https://www.jameslmilner.com/posts/workers-with-webpack-and-typescript/.
+
+
 
 This setup ensures that the function is executed in a separate thread, keeping the main thread free for UI updates and other tasks.

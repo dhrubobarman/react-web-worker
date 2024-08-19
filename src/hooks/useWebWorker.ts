@@ -2,19 +2,22 @@ import { useState, useEffect, useCallback } from "react";
 
 type WorkerStatus = "idle" | "running" | "error";
 
-function useWebWorker<T, R>(
-  workerFunction: (input?: T) => R
-): [(input?: T) => Promise<R>, { status: WorkerStatus; kill: () => void }] {
+function useWebWorker<T extends (...args: Parameters<T>) => ReturnType<T>>(
+  workerFunction: T
+): [
+  (...args: Parameters<T>) => Promise<ReturnType<T>>,
+  { status: WorkerStatus; kill: () => void }
+] {
   const [status, setStatus] = useState<WorkerStatus>("idle");
   const [worker, setWorker] = useState<Worker | null>(null);
 
   useEffect(() => {
-    const workerFunction = () => {
+    const workerFunc = () => {
       self.onmessage = async (event) => {
         const { input, functionString } = event.data;
         const func = new Function("return " + functionString)();
         try {
-          const result = await func(input);
+          const result = await func(...input);
           self.postMessage({ result });
         } catch (error) {
           const e = error as ErrorEvent;
@@ -22,7 +25,7 @@ function useWebWorker<T, R>(
         }
       };
     };
-    const code = workerFunction.toString();
+    const code = workerFunc.toString();
     const blob = new Blob([`(${code})()`], { type: "application/javascript" });
     const workerUrl = URL.createObjectURL(blob);
     const newWorker = new Worker(workerUrl);
@@ -35,14 +38,13 @@ function useWebWorker<T, R>(
   }, []);
 
   const runWorker = useCallback(
-    (input?: T): Promise<R> => {
+    (...args: Parameters<T>): Promise<ReturnType<T>> => {
       if (!worker) {
         return Promise.reject(new Error("Worker not initialized"));
       }
-
       setStatus("running");
       return new Promise((resolve, reject) => {
-        worker.onmessage = (event) => {
+        worker!.onmessage = (event) => {
           const { result, error } = event.data;
           if (error) {
             setStatus("error");
@@ -53,13 +55,13 @@ function useWebWorker<T, R>(
           }
         };
 
-        worker.onerror = (error) => {
+        worker!.onerror = (error) => {
           setStatus("error");
           reject(error);
         };
 
-        worker.postMessage({
-          input,
+        worker!.postMessage({
+          input: [...args],
           functionString: workerFunction.toString(),
         });
       });
@@ -115,3 +117,74 @@ export const webWorkerFunctionCreator = <
     },
   };
 };
+
+export function generateWebWorker<
+  T extends (...args: Parameters<T>) => ReturnType<T>
+>(
+  workerFunction: T
+): [
+  (...args: Parameters<T>) => Promise<ReturnType<T>>,
+  { status: WorkerStatus; kill: () => void }
+] {
+  let status: WorkerStatus = "idle";
+  let worker: Worker | null = null;
+
+  const workerFunc = () => {
+    self.onmessage = async (event) => {
+      const { input, functionString } = event.data;
+      const func = new Function("return " + functionString)();
+      try {
+        const result = await func(...input);
+        self.postMessage({ result });
+      } catch (error) {
+        const e = error as ErrorEvent;
+        self.postMessage({ error: e.message });
+      }
+    };
+  };
+  const code = workerFunc.toString();
+  const blob = new Blob([`(${code})()`], { type: "application/javascript" });
+  const workerUrl = URL.createObjectURL(blob);
+  const newWorker = new Worker(workerUrl);
+  worker = newWorker;
+
+  const runWorker = (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    if (!worker) {
+      return Promise.reject(new Error("Worker not initialized"));
+    }
+
+    status = "running";
+    return new Promise((resolve, reject) => {
+      worker!.onmessage = (event) => {
+        const { result, error } = event.data;
+        if (error) {
+          status = "error";
+          reject(new Error(error));
+        } else {
+          status = "idle";
+          resolve(result);
+        }
+      };
+
+      worker!.onerror = (error) => {
+        status = "error";
+        reject(error);
+      };
+
+      worker!.postMessage({
+        input: [...args],
+        functionString: workerFunction.toString(),
+      });
+    });
+  };
+
+  const kill = () => {
+    if (worker) {
+      worker.terminate();
+      worker = null;
+      status = "idle";
+    }
+  };
+
+  return [runWorker, { status, kill }];
+}

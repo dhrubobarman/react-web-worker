@@ -11,9 +11,8 @@ function workerFunction(n = 10000000000) {
 
 function ExampleWithHook() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [runCalculation, { status, kill }] = useWebWorker<number, number>(
-    workerFunction
-  );
+  const [runCalculation, { status, kill: _kill }] =
+    useWebWorker(workerFunction);
   const [result, setResult] = useState(0);
   const [count, setCount] = useState(0);
   const [input, setInput] = useState(10000000000);
