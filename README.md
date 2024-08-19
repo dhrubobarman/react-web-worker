@@ -117,10 +117,8 @@ const App = () => {
   const handleChange = async (value: number) => {
     setInput(value);
     try {
-      if (runWorker) {
-        const result = await runWorker(value);
-        setResult(result);
-      }
+      const result = await runWorker(value);
+      setResult(result);
     } catch (error) {
       console.error(error);
     }
@@ -129,26 +127,14 @@ const App = () => {
   return (
     <div>
       <label>
-        <p style={{ display: "block" }}>
-          Example With web worker function: it will not freeze the browser
-        </p>
         <input
           type="number"
           value={input}
-          style={{
-            display: "block",
-            padding: 10,
-            marginBottom: 5,
-            borderRadius: "5px",
-            boxShadow: "none",
-            minWidth: 191,
-          }}
           onChange={(e) => handleChange(e.target.valueAsNumber)}
         />
       </label>
       <button
         onClick={() => handleChange(200000000 + input)}
-        style={{ display: "block" }}
       >
         Increse Value by 200M
       </button>
@@ -168,8 +154,9 @@ export default App;
 This function is useful for offloading CPU-intensive tasks to a background thread, freeing up the main thread for other operations.
 
 ---
+---
 
-Here's the documentation for the `useWebWorker` hook:
+## Here's the documentation for the `useWebWorker` hook:
 
 ### `useWebWorker`
 
@@ -317,13 +304,3 @@ export default App;
 3. **Terminating the Worker**: The `kill` function, also created using `useCallback`, terminates the worker and resets its status to `"idle"`.
 
 This hook is useful for offloading CPU-intensive tasks to a background thread, freeing up the main thread for other operations in a React application.
-
-Source: Conversation with Copilot, 19/8/2024
-(1) Angular. https://angular.io/guide/web-worker.
-(2) Web workers • Angular. https://angular.dev/ecosystem/web-workers/.
-(3) TypeScript: The starting point for learning TypeScript. https://www.typescriptlang.org/docs/.
-(4) Writing Web Workers in TypeScript - jameslmilner.com. https://www.jameslmilner.com/posts/workers-with-webpack-and-typescript/.
-
-
-
-This setup ensures that the function is executed in a separate thread, keeping the main thread free for UI updates and other tasks.
