@@ -109,92 +109,130 @@ export default App;
 
 This setup ensures that the function is executed in a separate thread, keeping the main thread free for UI updates and other tasks.
 
+---
 
+### Documentation for `useWebWorker` Hook
 
-
-##
-### Description of `useWebWorker` Hook
-
-The `useWebWorker` hook is a custom React hook designed to leverage Web Workers for executing computationally intensive tasks in a separate thread. This helps keep the main thread responsive and improves the performance of your application. Here's a detailed breakdown of its components and functionality:
+The `useWebWorker` hook is a custom React hook designed to execute a function in a Web Worker, providing a way to offload heavy computations to a separate thread. This helps keep the main thread responsive and improves the performance of your application. Here's a detailed breakdown of its components and functionality:
 
 ```typescript
-const useWebWorker = <T>(
-  inputData: T,
-  workerFunction: () => void,
-  shouldExecute: boolean | number = true
-) => {
-  const [result, setResult] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const memoizedWorkerFunction = useCallback(workerFunction, [workerFunction]);
+function useWebWorker<T, R>(
+  workerFunction: (input?: T) => R
+): [(input?: T) => Promise<R>, { status: WorkerStatus; kill: () => void }] {
+  const [status, setStatus] = useState<WorkerStatus>("idle");
+  const [worker, setWorker] = useState<Worker | null>(null);
 
   useEffect(() => {
-    setIsLoading(Boolean(shouldExecute));
-    if (!shouldExecute) return;
-    setError(null);
-    try {
-      const code = memoizedWorkerFunction.toString();
-      const blob = new Blob([`(${code})()`], {
-        type: "application/javascript",
+    const workerFunction = () => {
+      self.onmessage = async (event) => {
+        const { input, functionString } = event.data;
+        const func = new Function("return " + functionString)();
+        try {
+          const result = await func(input);
+          self.postMessage({ result });
+        } catch (error) {
+          const e = error as ErrorEvent;
+          self.postMessage({ error: e.message });
+        }
+      };
+    };
+    const code = workerFunction.toString();
+    const blob = new Blob([`(${code})()`], { type: "application/javascript" });
+    const workerUrl = URL.createObjectURL(blob);
+    const newWorker = new Worker(workerUrl);
+    setWorker(newWorker);
+
+    return () => {
+      newWorker.terminate();
+      URL.revokeObjectURL(workerUrl);
+    };
+  }, []);
+
+  const runWorker = useCallback(
+    (input?: T): Promise<R> => {
+      if (!worker) {
+        return Promise.reject(new Error("Worker not initialized"));
+      }
+
+      setStatus("running");
+      return new Promise((resolve, reject) => {
+        worker.onmessage = (event) => {
+          const { result, error } = event.data;
+          if (error) {
+            setStatus("error");
+            reject(new Error(error));
+          } else {
+            setStatus("idle");
+            resolve(result);
+          }
+        };
+
+        worker.onerror = (error) => {
+          setStatus("error");
+          reject(error);
+        };
+
+        worker.postMessage({
+          input,
+          functionString: workerFunction.toString(),
+        });
       });
-      const workerScript = URL.createObjectURL(blob);
-      const worker = new Worker(workerScript);
-      worker.postMessage(inputData);
-      worker.onmessage = (e) => {
-        setResult(e.data);
-        setIsLoading(false);
-      };
-      worker.onerror = (e) => {
-        setError(e.message);
-        setIsLoading(false);
-      };
+    },
+    [worker, workerFunction]
+  );
 
-      return () => {
-        worker.terminate();
-        URL.revokeObjectURL(workerScript);
-      };
-    } catch (error) {
-      const e = error as ErrorEvent;
-      setError(e.message);
+  const kill = useCallback(() => {
+    if (worker) {
+      worker.terminate();
+      setWorker(null);
+      setStatus("idle");
     }
-  }, [inputData, memoizedWorkerFunction, shouldExecute]);
+  }, [worker]);
 
-  return { result, isLoading, error };
-};
+  return [runWorker, { status, kill }];
+}
 ```
 
-1. **Generics**:
-   - `<T>`: The hook uses a generic type `T` to ensure type safety for the input data and the result.
+#### Type Parameters
+- `<T, R>`: 
+  - `T`: The type of the input data to the worker function.
+  - `R`: The type of the result returned by the worker function.
 
-2. **Parameters**:
-   - `inputData: T`: The data to be processed by the Web Worker.
-   - `workerFunction: () => void`: The function to be executed in the Web Worker.
-   - `shouldExecute: boolean | number`: A flag to control whether the worker should execute. Defaults to `true`.
+#### Parameters
+- `workerFunction: (input?: T) => R`: 
+  - The function to be executed in the Web Worker. This function takes an optional input of type `T` and returns a result of type `R`.
 
-3. **State Variables**:
-   - `result`: Stores the result of the worker's computation.
-   - `error`: Stores any error message if the worker encounters an error.
-   - `isLoading`: Indicates whether the worker is currently processing.
+#### Return Value
+- `[(input?: T) => Promise<R>, { status: WorkerStatus; kill: () => void }]`: 
+  - A tuple containing:
+    1. A function to run the worker with the provided input, returning a promise that resolves with the result.
+    2. An object with the current status of the worker and a function to terminate the worker.
 
-4. **Memoized Worker Function**:
-   - `memoizedWorkerFunction`: The worker function is memoized using `useCallback` to prevent unnecessary re-creations.
+#### State Variables
+- `status`: Tracks the current status of the worker (`"idle"`, `"running"`, `"error"`).
+- `worker`: Holds the reference to the Web Worker instance.
 
-5. **Effect Hook**:
-   - The `useEffect` hook is used to manage the lifecycle of the Web Worker. It runs whenever `inputData`, `memoizedWorkerFunction`, or `shouldExecute` changes.
+#### Effect Hook
+- The `useEffect` hook initializes the Web Worker when the component mounts and cleans up when the component unmounts or dependencies change. It:
+  - Defines the worker function to handle messages and errors.
+  - Converts the worker function to a string and creates a `Blob` object.
+  - Generates a URL for the worker script and creates a new `Worker` instance.
+  - Sets the worker instance in the state.
+  - Terminates the worker and revokes the URL when the component unmounts.
 
-6. **Worker Creation and Communication**:
-   - The worker function is converted to a string and wrapped in a `Blob` object. This blob is then used to create a URL, which serves as the script for the Web Worker.
-   - A new `Worker` instance is created using the generated script URL.
-   - The worker is sent the `inputData` via `postMessage`.
-   - The worker's `onmessage` event handler updates the `result` state with the computed data.
-   - The worker's `onerror` event handler updates the `error` state with any error message.
+#### `runWorker` Function
+- The `runWorker` function is used to send data to the worker and handle the result. It:
+  - Checks if the worker is initialized.
+  - Sets the status to `"running"`.
+  - Returns a promise that resolves with the result or rejects with an error.
+  - Sends the input data and the worker function string to the worker.
+  - Handles messages and errors from the worker.
 
-7. **Cleanup**:
-   - The worker is terminated, and the URL is revoked when the component unmounts or dependencies change.
-
-8. **Return Object**:
-   - The hook returns an object containing `result`, `isLoading`, and `error` to be used in the component.
+#### `kill` Function
+- The `kill` function terminates the worker and resets the state. It:
+  - Terminates the worker if it exists.
+  - Sets the worker state to `null`.
+  - Resets the status to `"idle"`.
 
 ### Usage Example
 
@@ -205,16 +243,22 @@ Here's how you can use the `useWebWorker` hook in a React component:
 import React, { useState } from 'react';
 import useWebWorker from './useWebWorker';
 
-const workerFunction = () => {
-  onmessage = (e) => {
-    const result = e.data * 2; // Example computation
-    postMessage(result);
-  };
+const workerFunction = (input?: number) => {
+  return input ? input * 2 : 0; // Example computation
 };
 
 const App: React.FC = () => {
   const [input, setInput] = useState<number>(0);
-  const { result, isLoading, error } = useWebWorker(input, workerFunction);
+  const [runWorker, { status, kill }] = useWebWorker(workerFunction);
+
+  const handleRun = async () => {
+    try {
+      const result = await runWorker(input);
+      console.log('Result:', result);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
 
   return (
     <div>
@@ -223,10 +267,9 @@ const App: React.FC = () => {
         value={input}
         onChange={(e) => setInput(Number(e.target.value))}
       />
-      <div>
-        {isLoading ? 'Loading...' : `Result: ${result}`}
-        {error && <div>Error: {error}</div>}
-      </div>
+      <button onClick={handleRun}>Run Worker</button>
+      <button onClick={kill}>Kill Worker</button>
+      <div>Status: {status}</div>
     </div>
   );
 };
@@ -235,6 +278,3 @@ export default App;
 ```
 
 This setup ensures that the function is executed in a separate thread, keeping the main thread free for UI updates and other tasks.
-
-
-

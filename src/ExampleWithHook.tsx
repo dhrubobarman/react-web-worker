@@ -1,52 +1,31 @@
 import { useState } from "react";
 import useWebWorker from "./hooks/useWebWorker";
 
-function workerFunction() {
-  self.onmessage = function () {
-    let result: number = 0;
-    for (let i = 0; i < 10000000000; i++) {
-      result += i;
-    }
-    self.postMessage(result);
-  };
+function workerFunction(n = 10000000000) {
+  let result: number = 0;
+  for (let i = 0; i < n; i++) {
+    result += i;
+  }
+  return result;
 }
 
 function ExampleWithHook() {
-  const [shouldExecute, setShouldExecute] = useState(0);
-  const { result, isLoading, error } = useWebWorker(
-    "null",
-    workerFunction,
-    shouldExecute
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [runCalculation, { status, kill }] = useWebWorker<number, number>(
+    workerFunction
   );
+  const [result, setResult] = useState(0);
   const [count, setCount] = useState(0);
+  const [input, setInput] = useState(10000000000);
 
-  function executionResult() {
-    if (error) return <>error: {error}</>;
-    if (isLoading)
-      return (
-        <>
-          loading...{" "}
-          <button
-            style={{ marginInline: "auto", display: "block" }}
-            onClick={() => setShouldExecute(0)}
-          >
-            Stop execution
-          </button>
-        </>
-      );
-
-    return (
-      <>
-        {result}{" "}
-        <button
-          style={{ marginInline: "auto", display: "block" }}
-          onClick={() => setShouldExecute((prev) => prev + 1)}
-        >
-          {shouldExecute > 0 ? "Restart" : "Start"} execution
-        </button>
-      </>
-    );
-  }
+  const onWorkerClick = async () => {
+    try {
+      const result = await runCalculation(input);
+      setResult(result);
+    } catch (error) {
+      console.error("Worker error:", error);
+    }
+  };
 
   return (
     <div>
@@ -56,11 +35,38 @@ function ExampleWithHook() {
         <span style={{ marginBottom: 8 }}>
           This example is with web worker hook
         </span>
-        <button onClick={() => setCount((prev) => prev + 1)}>
-          Increse {count}
-        </button>
+        <input
+          style={{
+            display: "block",
+            padding: 10,
+            marginBottom: 5,
+            borderRadius: "5px",
+            boxShadow: "none",
+            minWidth: 191,
+          }}
+          type="number"
+          value={input}
+          onChange={(e) => setInput(+e.target.value)}
+        />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: 8,
+          }}
+        >
+          <button onClick={() => setCount((prev) => prev + 1)}>
+            Increse {count}
+          </button>
+          <button onClick={() => setCount((prev) => prev - 1)}>
+            Decrese {count}
+          </button>
+          <button onClick={() => setResult(0)}>Reset</button>
+          <button onClick={onWorkerClick}>Calculate</button>
+        </div>
+        <div>Status: {status}</div>
+        <div>Result: {result}</div>
       </div>
-      {executionResult()}
     </div>
   );
 }
